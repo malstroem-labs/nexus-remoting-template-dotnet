@@ -1,5 +1,7 @@
-﻿using System.Runtime.InteropServices;
-using Microsoft.Extensions.Logging;
+﻿using System;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 using Nexus.DataModel;
 using Nexus.Extensibility;
 using Nexus.Remoting;
@@ -26,14 +28,9 @@ catch (Exception ex)
 var communicator = new RemoteCommunicator(new DotnetDataSource(), address, port);
 await communicator.RunAsync();
 
-public class DotnetDataSource : IDataSource
+public class DotnetDataSource : SimpleDataSource
 {
-    public Task SetContextAsync(DataSourceContext context, ILogger logger, CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
-
-    public Task<CatalogRegistration[]> GetCatalogRegistrationsAsync(string path, CancellationToken cancellationToken)
+    public override Task<CatalogRegistration[]> GetCatalogRegistrationsAsync(string path, CancellationToken cancellationToken)
     {
         if (path == "/")
             return Task.FromResult(new CatalogRegistration[]
@@ -45,7 +42,7 @@ public class DotnetDataSource : IDataSource
             return Task.FromResult(new CatalogRegistration[0]);
     }
 
-    public Task<ResourceCatalog> GetCatalogAsync(string catalogId, CancellationToken cancellationToken)
+    public override Task<ResourceCatalog> GetCatalogAsync(string catalogId, CancellationToken cancellationToken)
     {
         if (catalogId == "/A/B/C")
         {
@@ -58,7 +55,6 @@ public class DotnetDataSource : IDataSource
                 .Build();
 
             var catalog = new ResourceCatalogBuilder("/A/B/C")
-                .WithProperty("a", "b")
                 .AddResource(resource)
                 .Build();
 
@@ -71,17 +67,7 @@ public class DotnetDataSource : IDataSource
         }
     }
 
-    public Task<(DateTime Begin, DateTime End)> GetTimeRangeAsync(string catalogId, CancellationToken cancellationToken)
-    {
-        return Task.FromResult((DateTime.MinValue, DateTime.MaxValue));
-    }
-
-    public Task<double> GetAvailabilityAsync(string catalogId, DateTime begin, DateTime end, CancellationToken cancellationToken)
-    {
-        return Task.FromResult(1.0);
-    }
-
-    public Task ReadAsync(
+    public override async Task ReadAsync(
         DateTime begin, 
         DateTime end, 
         ReadRequest[] requests, 
@@ -89,23 +75,28 @@ public class DotnetDataSource : IDataSource
         IProgress<double> progress, 
         CancellationToken cancellationToken)
     {
+        var temperatureData = await readData.Invoke("/SAMPLE/LOCAL/T1", begin, end, cancellationToken);
+
         foreach (var request in requests)
         {
             Calculate();
 
+            /* this nested sync method is required because spans cannot be accessed in async methods */
             void Calculate()
             {
-                var doubleData = MemoryMarshal.Cast<byte, double>(request.Data.Span);
+                /* generate data */
+                var temperatureBuffer = temperatureData.Span;
+                var resultBuffer = MemoryMarshal.Cast<byte, double>(request.Data.Span);
 
-                for (int i = 0; i < doubleData.Length; i++)
+                for (int i = 0; i < resultBuffer.Length; i++)
                 {
-                    doubleData[i] = i;
+                    /* example: multiply by two */
+                    resultBuffer[i] = temperatureBuffer[i] * 2;
                 }
 
+                /* mark all data as valid */
                 request.Status.Span.Fill(1);
             }
         }
-
-        return Task.CompletedTask;
     }
 }
