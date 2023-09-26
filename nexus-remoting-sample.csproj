@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Nexus.Remoting" Version="2.0.0-beta.1" />
+    <PackageReference Include="Nexus.Remoting" Version="2.0.0-beta.2" />
   </ItemGroup>
 
 </Project>

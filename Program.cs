@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+﻿using System.Buffers;
+using System.Runtime.InteropServices;
 using Nexus.DataModel;
 using Nexus.Extensibility;
 using Nexus.Remoting;
@@ -72,7 +73,12 @@ public class DotnetDataSource : SimpleDataSource
         IProgress<double> progress, 
         CancellationToken cancellationToken)
     {
-        var temperatureData = await readData.Invoke("/SAMPLE/LOCAL/T1", begin, end, cancellationToken);
+        var length = (int)((end - begin).Ticks / TimeSpan.FromSeconds(1).Ticks);
+
+        using var memoryOwner = MemoryPool<double>.Shared.Rent(length);
+        var temperatureMemory = memoryOwner.Memory.Slice(0, length);
+
+        await readData.Invoke("/SAMPLE/LOCAL/T1/1_s", begin, end, temperatureMemory, cancellationToken);
 
         foreach (var request in requests)
         {
@@ -82,13 +88,13 @@ public class DotnetDataSource : SimpleDataSource
             void Calculate()
             {
                 /* generate data */
-                var temperatureBuffer = temperatureData.Span;
+                var temperatureSpan = temperatureMemory.Span;
                 var resultBuffer = MemoryMarshal.Cast<byte, double>(request.Data.Span);
 
                 for (int i = 0; i < resultBuffer.Length; i++)
                 {
                     /* example: multiply by two */
-                    resultBuffer[i] = temperatureBuffer[i] * 2;
+                    resultBuffer[i] = temperatureSpan[i] * 2;
                 }
 
                 /* mark all data as valid */
